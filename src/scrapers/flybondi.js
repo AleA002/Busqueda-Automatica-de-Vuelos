@@ -8,7 +8,6 @@ async function scrapeFlyBondi() {
   try {
     console.log('🔍 Buscando vuelos FlyBondi...');
 
-    // Usa Chromium del sistema (pre-instalado en GitHub Actions)
     browser = await puppeteer.launch({
       executablePath: '/usr/bin/chromium-browser',
       headless: true,
@@ -29,32 +28,63 @@ async function scrapeFlyBondi() {
     // Espera a que carguen los resultados
     await page.waitForTimeout(3000);
 
-    // Busca precios en la página
+    // Busca precios con múltiples estrategias
     const prices = await page.evaluate(() => {
       const results = [];
 
-      // Selectores comunes para precios
-      const priceElements = document.querySelectorAll('[data-test*="price"], .price, [class*="price"], .tarifa');
+      // Estrategia 1: Busca cualquier elemento con números que parecen precios
+      const allElements = document.querySelectorAll('*');
+      allElements.forEach(el => {
+        const text = el.textContent?.trim();
 
-      priceElements.forEach(el => {
-        const priceText = el.textContent?.trim();
-        if (priceText && /\$|€|R\$|ARS/.test(priceText)) {
+        // Busca patrones de precio: números con punto/coma y 2 decimales
+        if (text && /\$\s*\d+[.,]\d{2}|\d+[.,]\d{2}\s*(ARS|USD|BRL)/.test(text)) {
           results.push({
-            price: priceText,
+            price: text,
+            element: el.tagName
+          });
+        }
+      });
+
+      // Estrategia 2: Busca en atributos data
+      const dataElements = document.querySelectorAll('[data-price], [data-amount], [data-cost]');
+      dataElements.forEach(el => {
+        const price = el.getAttribute('data-price') ||
+                     el.getAttribute('data-amount') ||
+                     el.getAttribute('data-cost');
+        if (price) {
+          results.push({
+            price: price,
+            element: 'data-attr'
+          });
+        }
+      });
+
+      // Estrategia 3: Busca en estilos o computed
+      const priceClasses = document.querySelectorAll('[class*="price"], [class*="tarif"], [class*="cost"], [class*="fare"]');
+      priceClasses.forEach(el => {
+        const text = el.textContent?.trim();
+        if (text && /\d{4,6}/.test(text)) {
+          results.push({
+            price: text,
             element: el.className
           });
         }
       });
 
-      return results;
+      return results.slice(0, 5); // Top 5
     });
+
+    console.log(`  Encontrados ${prices.length} candidatos de precio`);
 
     await browser.close();
 
     if (prices.length > 0) {
-      console.log(`  ✓ Encontrados ${prices.length} precios`);
-      // Extrae el primer precio válido
-      const firstPrice = prices[0].price.replace(/[^0-9,.]/g, '').trim();
+      // Limpia el primer precio encontrado
+      const cleanPrice = prices[0].price
+        .replace(/[^0-9,.]/g, '')
+        .trim()
+        .replace(/,/g, '.');
 
       return {
         airline: 'FlyBondi',
@@ -62,8 +92,9 @@ async function scrapeFlyBondi() {
         status: 'success',
         prices: [{
           airline: 'FlyBondi',
-          price: firstPrice,
-          url: searchUrl
+          price: cleanPrice,
+          url: searchUrl,
+          raw: prices[0].price
         }]
       };
     } else {
@@ -90,5 +121,6 @@ async function scrapeFlyBondi() {
 }
 
 module.exports = { scrapeFlyBondi };
+
 
 

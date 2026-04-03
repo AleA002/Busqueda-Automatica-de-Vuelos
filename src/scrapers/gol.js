@@ -8,7 +8,6 @@ async function scrapeGOL() {
   try {
     console.log('🔍 Buscando vuelos GOL...');
 
-    // Usa Chromium del sistema
     browser = await puppeteer.launch({
       executablePath: '/usr/bin/chromium-browser',
       headless: true,
@@ -19,10 +18,6 @@ async function scrapeGOL() {
     await page.setDefaultNavigationTimeout(30000);
     await page.setDefaultTimeout(30000);
 
-    // GOL usa CGC para Córdoba, FLN para Florianópolis
-    const searchUrl = 'https://www.voegol.com.br/pt-br/compre/passagens-aereas?origin=CGC&destination=FLN&departureDate=' +
-                      new Date().toISOString().split('T')[0];
-
     console.log(`  Navegando a: GOL.com.br`);
     await page.goto('https://www.voegol.com.br/pt-br/compre/passagens-aereas', {
       waitUntil: 'networkidle2'
@@ -31,42 +26,63 @@ async function scrapeGOL() {
     // Espera a que cargue la página
     await page.waitForTimeout(3000);
 
-    // Intenta llenar el formulario de búsqueda
-    try {
-      // Busca campos de origen/destino
-      await page.type('[data-testid="origin"], #origin, input[name="origin"]', 'Cordoba');
-      await page.waitForTimeout(1000);
-
-      await page.type('[data-testid="destination"], #destination, input[name="destination"]', 'Florianopolis');
-      await page.waitForTimeout(1000);
-
-      // Hace clic en buscar
-      await page.click('button[type="submit"], [data-testid="search-button"], button:contains("Buscar")');
-      await page.waitForTimeout(3000);
-    } catch (e) {
-      console.log('  Nota: No fue posible hacer clic en búsqueda automáticamente');
-    }
-
-    // Busca precios
+    // Busca precios con múltiples estrategias
     const prices = await page.evaluate(() => {
       const results = [];
-      const priceElements = document.querySelectorAll('[data-testid*="price"], .price, [class*="preco"], [class*="tarifa"]');
 
-      priceElements.forEach(el => {
-        const priceText = el.textContent?.trim();
-        if (priceText && /\d/.test(priceText)) {
-          results.push(priceText);
+      // Estrategia 1: Busca números que parecen precios
+      const allElements = document.querySelectorAll('*');
+      allElements.forEach(el => {
+        const text = el.textContent?.trim();
+
+        // Patrón: $ seguido de números con decimales
+        if (text && /R\$\s*\d+[.,]\d{2}|\$\s*\d+[.,]\d{2}|\d+[.,]\d{2}\s*R\$/.test(text)) {
+          results.push({
+            price: text,
+            type: 'regex-pattern'
+          });
         }
       });
 
-      return results.slice(0, 3); // Top 3 precios
+      // Estrategia 2: Busca en atributos data
+      const dataElements = document.querySelectorAll('[data-price], [data-amount], [data-tarifa], [data-valor]');
+      dataElements.forEach(el => {
+        const price = el.getAttribute('data-price') ||
+                     el.getAttribute('data-amount') ||
+                     el.getAttribute('data-tarifa') ||
+                     el.getAttribute('data-valor');
+        if (price && /\d+/.test(price)) {
+          results.push({
+            price: price,
+            type: 'data-attr'
+          });
+        }
+      });
+
+      // Estrategia 3: Busca por clases que contengan "price", "tarif", "valor"
+      const priceClasses = document.querySelectorAll('[class*="price"], [class*="tarif"], [class*="valor"], [class*="fare"]');
+      priceClasses.forEach(el => {
+        const text = el.textContent?.trim();
+        if (text && /\d{4,}/.test(text)) {
+          results.push({
+            price: text,
+            type: 'class-selector'
+          });
+        }
+      });
+
+      return results.slice(0, 5);
     });
+
+    console.log(`  Encontrados ${prices.length} candidatos de precio`);
 
     await browser.close();
 
     if (prices.length > 0) {
-      console.log(`  ✓ Encontrados precios en GOL`);
-      const cleanPrice = prices[0].replace(/[^0-9,.]/g, '').trim();
+      const cleanPrice = prices[0].price
+        .replace(/[^0-9,.]/g, '')
+        .trim()
+        .replace(/,/g, '.');
 
       return {
         airline: 'GOL',
@@ -75,7 +91,8 @@ async function scrapeGOL() {
         prices: [{
           airline: 'GOL',
           price: cleanPrice,
-          url: searchUrl
+          url: 'https://www.voegol.com.br/pt-br/compre/passagens-aereas',
+          raw: prices[0].price
         }]
       };
     } else {
@@ -102,5 +119,6 @@ async function scrapeGOL() {
 }
 
 module.exports = { scrapeGOL };
+
 
 
