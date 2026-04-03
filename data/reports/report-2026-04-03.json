@@ -1,27 +1,27 @@
 {
-  "timestamp": "2026-04-03T19:14:30.902Z",
+  "timestamp": "2026-04-03T19:40:36.833Z",
   "date": "2026-04-03",
   "scrapers": [
     {
       "airline": "FlyBondi",
       "url": "https://www.flybondi.com/es/",
-      "status": "pending-puppeteer",
+      "status": "no-prices-found",
       "prices": [],
-      "error": "Requiere navegador para scraping"
+      "message": "No se encontraron precios en la página"
     },
     {
       "airline": "GOL",
       "url": "https://www.voegol.com.br/",
-      "status": "pending-puppeteer",
+      "status": "no-prices-found",
       "prices": [],
-      "error": "Requiere navegador para scraping"
+      "message": "No se encontraron precios"
     },
     {
       "airline": "Naranja X",
       "url": "https://viajes.naranjax.com/",
-      "status": "pending-puppeteer",
+      "status": "no-prices-found",
       "prices": [],
-      "error": "Para scraping dinámico se necesita navegador"
+      "message": "No se encontraron precios"
     }
   ],
   "bestPrices": [],
