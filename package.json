@@ -1,21 +1,29 @@
 {
   "name": "buscador-vuelos",
   "version": "1.0.0",
-  "description": "Buscador diario de vuelos en FlyBondi, GOL y Naranja X",
-  "main": "src/index.js",
+  "description": "Búsqueda automática de vuelos Córdoba-Florianópolis",
+  "main": "src/search.js",
   "scripts": {
-    "start": "node src/index.js",
     "search": "node src/search.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "node --watch src/search.js"
   },
-  "keywords": ["vuelos", "scraping", "scheduler"],
+  "keywords": [
+    "vuelos",
+    "scraper",
+    "flybondi",
+    "gol",
+    "naranja",
+    "argentina",
+    "brasil"
+  ],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "axios": "^1.6.0",
-    "cheerio": "^1.0.0-rc.12",
-    "puppeteer-extra": "^3.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2",
-    "node-cron": "^3.0.3"
+    "cheerio": "^1.0.0-rc.12"
+  },
+  "devDependencies": {},
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
