@@ -1,66 +1,103 @@
-const axios = require('axios');
+const puppeteer = require('puppeteer');
 
 /**
- * Scraper para GOL
- * GOL es una aerolínea grande con sitio web dinámico
+ * Scraper para GOL usando Puppeteer
  */
 async function scrapeGOL() {
+  let browser;
   try {
     console.log('🔍 Buscando vuelos GOL...');
 
-    // GOL URL base
-    const url = 'https://www.voegol.com.br/';
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu']
+    });
 
-    const searchParams = {
-      origin: 'CGC',      // Córdoba Capital
-      destination: 'FLN', // Florianópolis
-      date: new Date().toISOString().split('T')[0],
-      passengers: 1
-    };
+    const page = await browser.newPage();
+    await page.setDefaultNavigationTimeout(30000);
+    await page.setDefaultTimeout(30000);
 
-    console.log('  Origen: CGC (Córdoba)');
-    console.log('  Destino: FLN (Florianópolis)');
-    console.log('  Intenta acceder a:', url);
+    // GOL usa CGC para Córdoba, FLN para Florianópolis
+    const searchUrl = 'https://www.voegol.com.br/pt-br/compre/passagens-aereas?origin=CGC&destination=FLN&departureDate=' +
+                      new Date().toISOString().split('T')[0];
 
-    // Intenta obtener datos de la API interna de GOL
-    // Muchas aerolíneas tienen endpoints JSON que se pueden consultar
-    const apiUrl = `https://www.voegol.com.br/api/flights/search`;
+    console.log(`  Navegando a: GOL.com.br`);
+    await page.goto('https://www.voegol.com.br/pt-br/compre/passagens-aereas', {
+      waitUntil: 'networkidle2'
+    });
 
+    // Espera a que cargue la página
+    await page.waitForTimeout(3000);
+
+    // Intenta llenar el formulario de búsqueda
     try {
-      const response = await axios.get(apiUrl, {
-        params: searchParams,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/91.0.4472.124'
-        },
-        timeout: 10000
+      // Busca campos de origen/destino
+      await page.type('[data-testid="origin"], #origin, input[name="origin"]', 'Cordoba');
+      await page.waitForTimeout(1000);
+
+      await page.type('[data-testid="destination"], #destination, input[name="destination"]', 'Florianopolis');
+      await page.waitForTimeout(1000);
+
+      // Hace clic en buscar
+      await page.click('button[type="submit"], [data-testid="search-button"], button:contains("Buscar")');
+      await page.waitForTimeout(3000);
+    } catch (e) {
+      console.log('  Nota: No fue posible hacer clic en búsqueda automáticamente');
+    }
+
+    // Busca precios
+    const prices = await page.evaluate(() => {
+      const results = [];
+      const priceElements = document.querySelectorAll('[data-testid*="price"], .price, [class*="preco"], [class*="tarifa"]');
+
+      priceElements.forEach(el => {
+        const priceText = el.textContent?.trim();
+        if (priceText && /\d/.test(priceText)) {
+          results.push(priceText);
+        }
       });
 
+      return results.slice(0, 3); // Top 3 precios
+    });
+
+    await browser.close();
+
+    if (prices.length > 0) {
+      console.log(`  ✓ Encontrados precios en GOL`);
+      const cleanPrice = prices[0].replace(/[^0-9,.]/g, '').trim();
+
       return {
         airline: 'GOL',
-        url: url,
+        url: 'https://www.voegol.com.br/',
         status: 'success',
-        data: response.data,
-        prices: [] // Se procesará en el orquestador
+        prices: [{
+          airline: 'GOL',
+          price: cleanPrice,
+          url: searchUrl
+        }]
       };
-    } catch (apiError) {
-      // Si la API falla, retorna que requiere Puppeteer
+    } else {
       return {
         airline: 'GOL',
-        url: url,
-        status: 'pending-puppeteer',
+        url: 'https://www.voegol.com.br/',
+        status: 'no-prices-found',
         prices: [],
-        error: 'Requiere navegador para scraping'
+        message: 'No se encontraron precios'
       };
     }
 
   } catch (error) {
-    console.error('❌ Error en GOL:', error.message);
+    console.error(`❌ Error en GOL: ${error.message}`);
+    if (browser) await browser.close();
+
     return {
       airline: 'GOL',
       status: 'error',
+      prices: [],
       error: error.message
     };
   }
 }
 
 module.exports = { scrapeGOL };
+

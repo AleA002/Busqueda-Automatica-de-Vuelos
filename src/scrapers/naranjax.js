@@ -1,83 +1,140 @@
-const axios = require('axios');
+const puppeteer = require('puppeteer');
 const cheerio = require('cheerio');
 
 /**
- * Scraper para Naranja X Viajes (viajes.naranjax.com)
+ * Scraper para Naranja X Viajes usando Puppeteer
  */
 async function scrapeNaranjaX() {
+  let browser;
   try {
     console.log('🔍 Buscando vuelos Naranja X...');
 
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu']
+    });
+
+    const page = await browser.newPage();
+    await page.setDefaultNavigationTimeout(30000);
+    await page.setDefaultTimeout(30000);
+
     const url = 'https://viajes.naranjax.com/';
+    const today = new Date().toISOString().split('T')[0];
+    const searchUrl = `${url}?origin=COR&destination=FLN&date=${today}`;
 
-    const searchParams = {
-      origin: 'COR',      // Córdoba Capital
-      destination: 'FLN', // Florianópolis
-      date: new Date().toISOString().split('T')[0],
-      passengers: 1
-    };
+    console.log(`  Navegando a Naranja X Viajes...`);
+    await page.goto(url, { waitUntil: 'networkidle2' });
 
-    console.log('  Origen: COR (Córdoba)');
-    console.log('  Destino: FLN (Florianópolis)');
+    // Espera a que cargue la página
+    await page.waitForTimeout(2000);
 
-    // Intenta hacer una búsqueda directa
-    const searchUrl = `${url}?origin=${searchParams.origin}&destination=${searchParams.destination}&date=${searchParams.date}`;
-
+    // Intenta llenar el formulario
     try {
-      const response = await axios.get(searchUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/91.0.4472.124'
-        },
-        timeout: 10000
-      });
+      // Busca y completa campos de búsqueda
+      const originInput = await page.$('input[data-testid="origin"], #origin, input[placeholder*="origen"]');
+      if (originInput) {
+        await originInput.type('Cordoba');
+        await page.waitForTimeout(500);
+      }
 
-      // Intenta parsear con Cheerio si hay contenido HTML
-      const $ = cheerio.load(response.data);
+      const destInput = await page.$('input[data-testid="destination"], #destination, input[placeholder*="destino"]');
+      if (destInput) {
+        await destInput.type('Florianopolis');
+        await page.waitForTimeout(500);
+      }
 
-      // Busca elementos de precio/vuelo (estructura típica)
-      const flights = [];
-      $('.flight-result, [data-flight], .resultado-vuelo').each((index, element) => {
-        const price = $(element).find('.price, [data-price], .precio').text();
-        const airline = $(element).find('.airline, [data-airline], .aerolinea').text();
-        const time = $(element).find('.time, [data-time], .horario').text();
+      // Busca el botón de búsqueda
+      const searchBtn = await page.$('button[type="submit"], button:has-text("Buscar")');
+      if (searchBtn) {
+        await searchBtn.click();
+        await page.waitForTimeout(3000);
+      }
+    } catch (e) {
+      console.log('  Nota: No se pudo completar el formulario automáticamente');
+    }
 
-        if (price) {
+    // Obtiene el HTML y lo parsea
+    const html = await page.content();
+    const $ = cheerio.load(html);
+
+    // Busca elementos de precio/vuelo
+    const flights = [];
+
+    // Selectores comunes
+    const priceSelectors = [
+      '.flight-result',
+      '[data-flight]',
+      '.resultado-vuelo',
+      '[class*="price"]',
+      '[class*="tarifa"]',
+      '[data-testid*="price"]'
+    ];
+
+    $(priceSelectors.join(',')).each((index, element) => {
+      const $el = $(element);
+      const priceText = $el.find('.price, [data-price], .precio, [class*="price"]').text();
+      const airline = $el.find('.airline, [data-airline], .aerolinea').text();
+
+      if (priceText && /\d/.test(priceText)) {
+        flights.push({
+          airline: airline || 'Naranja X',
+          price: priceText.replace(/[^0-9,.]/g, '').trim(),
+          url: searchUrl
+        });
+      }
+    });
+
+    // Si no encontró con selectores complejos, busca números que parecen precios
+    if (flights.length === 0) {
+      const pageText = $.text();
+      // Busca patrones como "5200.50" o "5.200,50"
+      const pricePattern = /[\$\s]?(\d{1,5}[.,]\d{2})/g;
+      const matches = pageText.match(pricePattern);
+
+      if (matches) {
+        const uniquePrices = [...new Set(matches)].slice(0, 1);
+        uniquePrices.forEach(price => {
           flights.push({
-            airline: airline || 'Naranja X',
-            price: price.replace(/[^0-9,.]/g, ''),
-            time: time,
+            airline: 'Naranja X',
+            price: price.replace(/[^0-9,.]/g, '').trim(),
             url: searchUrl
           });
-        }
-      });
+        });
+      }
+    }
 
+    await browser.close();
+
+    if (flights.length > 0) {
+      console.log(`  ✓ Encontrados ${flights.length} vuelos`);
       return {
         airline: 'Naranja X',
         url: url,
-        status: flights.length > 0 ? 'success' : 'no-results',
-        prices: flights,
-        message: flights.length > 0 ? `${flights.length} vuelos encontrados` : 'No se encontraron vuelos'
+        status: 'success',
+        prices: flights
       };
-
-    } catch (error) {
-      console.warn('  API/HTML parsing falló, requiere Puppeteer');
+    } else {
       return {
         airline: 'Naranja X',
         url: url,
-        status: 'pending-puppeteer',
+        status: 'no-prices-found',
         prices: [],
-        error: 'Para scraping dinámico se necesita navegador'
+        message: 'No se encontraron precios'
       };
     }
 
   } catch (error) {
-    console.error('❌ Error en Naranja X:', error.message);
+    console.error(`❌ Error en Naranja X: ${error.message}`);
+    if (browser) await browser.close();
+
     return {
       airline: 'Naranja X',
       status: 'error',
+      prices: [],
       error: error.message
     };
   }
 }
 
 module.exports = { scrapeNaranjaX };
+
