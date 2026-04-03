@@ -1,14 +1,16 @@
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
 
 /**
- * Scraper para GOL usando Puppeteer
+ * Scraper para GOL usando Puppeteer-Core
  */
 async function scrapeGOL() {
   let browser;
   try {
     console.log('🔍 Buscando vuelos GOL...');
 
+    // Usa Chromium del sistema
     browser = await puppeteer.launch({
+      executablePath: '/usr/bin/chromium-browser',
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu']
     });
@@ -100,4 +102,5 @@ async function scrapeGOL() {
 }
 
 module.exports = { scrapeGOL };
+
 

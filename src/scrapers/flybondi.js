@@ -1,14 +1,16 @@
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
 
 /**
- * Scraper para FlyBondi usando Puppeteer
+ * Scraper para FlyBondi usando Puppeteer-Core
  */
 async function scrapeFlyBondi() {
   let browser;
   try {
     console.log('🔍 Buscando vuelos FlyBondi...');
 
+    // Usa Chromium del sistema (pre-instalado en GitHub Actions)
     browser = await puppeteer.launch({
+      executablePath: '/usr/bin/chromium-browser',
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu']
     });
@@ -88,4 +90,5 @@ async function scrapeFlyBondi() {
 }
 
 module.exports = { scrapeFlyBondi };
+
 

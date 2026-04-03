@@ -14,11 +14,14 @@ on:
 jobs:
   search-flights:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
 
     steps:
       - name: 📥 Checkout código
         uses: actions/checkout@v4
+
+      - name: 📦 Instalar Chromium
+        run: sudo apt-get update && sudo apt-get install -y chromium-browser
 
       - name: 📦 Setup Node.js
         uses: actions/setup-node@v4
@@ -26,11 +29,11 @@ jobs:
           node-version: '20'
 
       - name: 📝 Instalar dependencias
-        run: npm install --verbose
+        run: npm install
 
       - name: 🔍 Ejecutar búsqueda de vuelos
         run: npm run search
-        timeout-minutes: 10
+        timeout-minutes: 5
 
       - name: 📤 Commit y push resultados
         run: |
@@ -46,5 +49,6 @@ jobs:
           echo "✅ Búsqueda de vuelos completada"
           echo "📊 Ver resultados en: data/reports/"
           echo "💰 Mejores precios en: data/best-prices.json"
+
 
 

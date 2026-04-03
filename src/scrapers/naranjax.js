@@ -1,15 +1,17 @@
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
 const cheerio = require('cheerio');
 
 /**
- * Scraper para Naranja X Viajes usando Puppeteer
+ * Scraper para Naranja X Viajes usando Puppeteer-Core
  */
 async function scrapeNaranjaX() {
   let browser;
   try {
     console.log('🔍 Buscando vuelos Naranja X...');
 
+    // Usa Chromium del sistema
     browser = await puppeteer.launch({
+      executablePath: '/usr/bin/chromium-browser',
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu']
     });
@@ -137,4 +139,5 @@ async function scrapeNaranjaX() {
 }
 
 module.exports = { scrapeNaranjaX };
+
 
