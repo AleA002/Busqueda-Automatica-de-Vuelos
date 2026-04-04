@@ -58,17 +58,36 @@ async function scrapeFlyBondi() {
         // Esperar calendario
         await page.waitForSelector('button', { timeout: 15000 });
 
-        // Buscar botón del día (Flybondi usa botones en calendario)
-        const [dayButton] = await page.$x(`//button[contains(., '${day}')]`);
+        // Buscar botón del día usando JavaScript evaluado (más robusto)
+        const dayFound = await page.evaluate((day) => {
+          const allDayElements = document.querySelectorAll(
+            'button, [role="button"], [class*="day"], [data-day], [aria-label*="day"]'
+          );
+          const dayEl = Array.from(allDayElements).find(el => {
+            const text = el.textContent.trim().split(/\n/)[0].trim();
+            return text === day.toString();
+          });
+          return !!dayEl;
+        }, day);
 
-        if (!dayButton) {
+        if (!dayFound) {
           console.log(`⚠️ Día ${day} no clickeable`);
           continue;
         }
 
+        // Click y esperar navegación
         await Promise.all([
           page.waitForNavigation({ waitUntil: 'networkidle2' }),
-          dayButton.click()
+          page.evaluate((day) => {
+            const allDayElements = document.querySelectorAll(
+              'button, [role="button"], [class*="day"], [data-day], [aria-label*="day"]'
+            );
+            const dayEl = Array.from(allDayElements).find(el => {
+              const text = el.textContent.trim().split(/\n/)[0].trim();
+              return text === day.toString();
+            });
+            if (dayEl) dayEl.click();
+          }, day)
         ]);
 
         // Esperar resultados
