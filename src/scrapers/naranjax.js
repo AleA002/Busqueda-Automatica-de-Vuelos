@@ -1,13 +1,33 @@
 const puppeteer = require('puppeteer-core');
 const cheerio = require('cheerio');
 
+const URL = 'https://viajes.naranjax.com/';
+
+function normalizePrice(text) {
+  if (!text) return null;
+
+  const cleaned = text
+    .replace(/\s/g, '')
+    .replace(/[^\d.,]/g, '');
+
+  if (cleaned.includes('.') && cleaned.includes(',')) {
+    return Number(cleaned.replace(/\./g, '').replace(',', '.'));
+  }
+
+  if (cleaned.includes(',')) {
+    return Number(cleaned.replace(',', '.'));
+  }
+
+  return Number(cleaned);
+}
+
 /**
  * Scraper para Naranja X Viajes usando Puppeteer-Core
  */
 async function scrapeNaranjaX() {
   let browser;
   try {
-    console.log('🔍 Buscando vuelos Naranja X...');
+    console.log('✈️ Buscando vuelos Naranja X...');
 
     browser = await puppeteer.launch({
       executablePath: '/usr/bin/chromium-browser',
@@ -16,95 +36,72 @@ async function scrapeNaranjaX() {
     });
 
     const page = await browser.newPage();
-    await page.setDefaultNavigationTimeout(30000);
-    await page.setDefaultTimeout(30000);
+    await page.setDefaultTimeout(45000);
 
-    const url = 'https://viajes.naranjax.com/';
-
-    console.log(`  Navegando a Naranja X Viajes...`);
-    await page.goto(url, { waitUntil: 'networkidle2' });
+    console.log(`📍 Navegando a Naranja X Viajes...`);
+    await page.goto(URL, { waitUntil: 'networkidle2' });
 
     // Espera a que cargue la página
     await page.waitForTimeout(2000);
 
-    // Busca precios directo en JavaScript
+    // Busca precios con selectores mejorados
     const prices = await page.evaluate(() => {
-      const results = [];
+      const values = [];
 
-      // Estrategia 1: Busca patrones de precio en todo el texto
-      const allElements = document.querySelectorAll('*');
-      allElements.forEach(el => {
+      const elements = document.querySelectorAll(
+        '[class*="price"], [class*="tarif"], [class*="valor"], [class*="cost"], [class*="fare"], [data-price], [data-amount], [data-valor]'
+      );
+
+      elements.forEach(el => {
         const text = el.textContent?.trim();
-
-        // Patrón: $ o números con coma/punto y 2 decimales
-        if (text && /\$\s*\d+[.,]\d{2}|\d+[.,]\d{2}\s*(ARS|BRL|USD)|\d{4,6}[.,]\d{2}/.test(text)) {
-          results.push({
-            price: text,
-            type: 'text-pattern'
-          });
+        if (text && /\d/.test(text)) {
+          values.push(text);
         }
       });
 
-      // Estrategia 2: Busca en atributos data
-      const dataElements = document.querySelectorAll('[data-price], [data-amount], [data-valor], [data-cost]');
-      dataElements.forEach(el => {
-        const price = el.getAttribute('data-price') ||
-                     el.getAttribute('data-amount') ||
-                     el.getAttribute('data-valor') ||
-                     el.getAttribute('data-cost');
-        if (price && /\d{3,}/.test(price)) {
-          results.push({
-            price: price,
-            type: 'data-attr'
-          });
-        }
-      });
-
-      // Estrategia 3: Busca por ID o clases que sugieren precio
-      const priceElements = document.querySelectorAll('[id*="price"], [id*="tarif"], [class*="price"], [class*="tarif"], [class*="cost"]');
-      priceElements.forEach(el => {
-        const text = el.textContent?.trim();
-        if (text && /\d{4,}/.test(text)) {
-          results.push({
-            price: text,
-            type: 'price-class'
-          });
-        }
-      });
-
-      return results.slice(0, 5);
+      return values;
     });
 
-    console.log(`  Encontrados ${prices.length} candidatos de precio`);
+    console.log(`📊 Encontrados ${prices.length} candidatos de precio`);
+
+    const results = [];
+
+    for (const raw of prices) {
+      const price = normalizePrice(raw);
+
+      if (price && price > 100) { // filtro básico para Naranja X
+        results.push({
+          airline: 'Naranja X',
+          price,
+          raw,
+          url: URL
+        });
+      }
+    }
+
+    if (!results.length) {
+      return {
+        airline: 'Naranja X',
+        status: 'no-prices-found',
+        prices: []
+      };
+    }
+
+    // Ordenar por precio
+    results.sort((a, b) => a.price - b.price);
+
+    const cheapest = results[0];
+
+    console.log('💰 Mejor precio encontrado:', cheapest);
 
     await browser.close();
 
-    if (prices.length > 0) {
-      const cleanPrice = prices[0].price
-        .replace(/[^0-9,.]/g, '')
-        .trim()
-        .replace(/,/g, '.');
-
-      return {
-        airline: 'Naranja X',
-        url: url,
-        status: 'success',
-        prices: [{
-          airline: 'Naranja X',
-          price: cleanPrice,
-          url: url,
-          raw: prices[0].price
-        }]
-      };
-    } else {
-      return {
-        airline: 'Naranja X',
-        url: url,
-        status: 'no-prices-found',
-        prices: [],
-        message: 'No se encontraron precios'
-      };
-    }
+    return {
+      airline: 'Naranja X',
+      status: 'success',
+      bestPrice: cheapest,
+      prices: results.slice(0, 10)
+    };
 
   } catch (error) {
     console.error(`❌ Error en Naranja X: ${error.message}`);

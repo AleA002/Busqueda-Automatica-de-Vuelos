@@ -1,126 +1,148 @@
 const puppeteer = require('puppeteer-core');
 
-/**
- * Scraper para FlyBondi usando Puppeteer-Core
- */
+const ORIGIN = 'COR';
+const DESTINATION = 'FLN';
+
+const YEAR = new Date().getFullYear() + 1; // Ej: 2027 si estás planeando con tiempo
+const MONTHS = [0, 1]; // Enero (0) y Febrero (1)
+
+function normalizePrice(text) {
+  if (!text) return null;
+
+  const cleaned = text
+    .replace(/\s/g, '')
+    .replace(/[^\d.,]/g, '');
+
+  if (cleaned.includes('.') && cleaned.includes(',')) {
+    return Number(cleaned.replace(/\./g, '').replace(',', '.'));
+  }
+
+  if (cleaned.includes(',')) {
+    return Number(cleaned.replace(',', '.'));
+  }
+
+  return Number(cleaned);
+}
+
 async function scrapeFlyBondi() {
   let browser;
+
   try {
-    console.log('🔍 Buscando vuelos FlyBondi...');
+    console.log('✈️ Buscando vuelos FlyBondi COR → FLN...');
 
     browser = await puppeteer.launch({
       executablePath: '/usr/bin/chromium-browser',
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-gpu']
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
 
     const page = await browser.newPage();
-    await page.setDefaultNavigationTimeout(30000);
-    await page.setDefaultTimeout(30000);
+    await page.setDefaultTimeout(45000);
 
-    // Navega a FlyBondi
-    const searchUrl = 'https://www.flybondi.com/es/?origin=COR&destination=FLN&date=' +
-                      new Date().toISOString().split('T')[0];
+    const results = [];
 
-    console.log(`  Navegando a: ${searchUrl}`);
-    await page.goto(searchUrl, { waitUntil: 'networkidle2' });
+    for (const month of MONTHS) {
+      console.log(`📅 Analizando mes: ${month + 1}/${YEAR}`);
 
-    // Espera a que carguen los resultados
-    await page.waitForTimeout(3000);
+      const daysInMonth = new Date(YEAR, month + 1, 0).getDate();
 
-    // Busca precios con múltiples estrategias
-    const prices = await page.evaluate(() => {
-      const results = [];
+      for (let day = 1; day <= daysInMonth; day++) {
+        const date = `${YEAR}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-      // Estrategia 1: Busca cualquier elemento con números que parecen precios
-      const allElements = document.querySelectorAll('*');
-      allElements.forEach(el => {
-        const text = el.textContent?.trim();
+        console.log(`🔎 Buscando fecha: ${date}`);
 
-        // Busca patrones de precio: números con punto/coma y 2 decimales
-        if (text && /\$\s*\d+[.,]\d{2}|\d+[.,]\d{2}\s*(ARS|USD|BRL)/.test(text)) {
-          results.push({
-            price: text,
-            element: el.tagName
-          });
+        const url = `https://flybondi.com/ar/search/dates?adults=1&children=0&currency=ARS&fromCityCode=${ORIGIN}&infants=0&toCityCode=${DESTINATION}`;
+
+        await page.goto(url, { waitUntil: 'networkidle2' });
+
+        // Esperar calendario
+        await page.waitForSelector('button', { timeout: 15000 });
+
+        // Buscar botón del día (Flybondi usa botones en calendario)
+        const [dayButton] = await page.$x(`//button[contains(., '${day}')]`);
+
+        if (!dayButton) {
+          console.log(`⚠️ Día ${day} no clickeable`);
+          continue;
         }
-      });
 
-      // Estrategia 2: Busca en atributos data
-      const dataElements = document.querySelectorAll('[data-price], [data-amount], [data-cost]');
-      dataElements.forEach(el => {
-        const price = el.getAttribute('data-price') ||
-                     el.getAttribute('data-amount') ||
-                     el.getAttribute('data-cost');
-        if (price) {
-          results.push({
-            price: price,
-            element: 'data-attr'
+        await Promise.all([
+          page.waitForNavigation({ waitUntil: 'networkidle2' }),
+          dayButton.click()
+        ]);
+
+        // Esperar resultados
+        await page.waitForTimeout(3000);
+
+        // Extraer precios reales
+        const prices = await page.evaluate(() => {
+          const values = [];
+
+          const elements = document.querySelectorAll(
+            '[class*="price"], [class*="fare"], [data-price]'
+          );
+
+          elements.forEach(el => {
+            const text = el.textContent?.trim();
+            if (text && /\d/.test(text)) {
+              values.push(text);
+            }
           });
+
+          return values;
+        });
+
+        for (const raw of prices) {
+          const price = normalizePrice(raw);
+
+          if (price && price > 1000) { // filtro básico
+            results.push({
+              airline: 'FlyBondi',
+              date,
+              price,
+              raw,
+              url: page.url()
+            });
+          }
         }
-      });
 
-      // Estrategia 3: Busca en estilos o computed
-      const priceClasses = document.querySelectorAll('[class*="price"], [class*="tarif"], [class*="cost"], [class*="fare"]');
-      priceClasses.forEach(el => {
-        const text = el.textContent?.trim();
-        if (text && /\d{4,6}/.test(text)) {
-          results.push({
-            price: text,
-            element: el.className
-          });
-        }
-      });
+        // Volver atrás para siguiente día
+        await page.goBack({ waitUntil: 'networkidle2' });
+      }
+    }
 
-      return results.slice(0, 5); // Top 5
-    });
-
-    console.log(`  Encontrados ${prices.length} candidatos de precio`);
-
-    await browser.close();
-
-    if (prices.length > 0) {
-      // Limpia el primer precio encontrado
-      const cleanPrice = prices[0].price
-        .replace(/[^0-9,.]/g, '')
-        .trim()
-        .replace(/,/g, '.');
-
+    if (!results.length) {
       return {
         airline: 'FlyBondi',
-        url: 'https://www.flybondi.com/es/',
-        status: 'success',
-        prices: [{
-          airline: 'FlyBondi',
-          price: cleanPrice,
-          url: searchUrl,
-          raw: prices[0].price
-        }]
-      };
-    } else {
-      return {
-        airline: 'FlyBondi',
-        url: 'https://www.flybondi.com/es/',
         status: 'no-prices-found',
-        prices: [],
-        message: 'No se encontraron precios en la página'
+        prices: []
       };
     }
 
-  } catch (error) {
-    console.error(`❌ Error en FlyBondi: ${error.message}`);
-    if (browser) await browser.close();
+    // Ordenar por precio
+    results.sort((a, b) => a.price - b.price);
+
+    const cheapest = results[0];
+
+    console.log('💰 Mejor precio encontrado:', cheapest);
 
     return {
       airline: 'FlyBondi',
-      status: 'error',
-      prices: [],
-      error: error.message
+      status: 'success',
+      bestPrice: cheapest,
+      prices: results.slice(0, 10)
     };
+
+  } catch (error) {
+    return {
+      airline: 'FlyBondi',
+      status: 'error',
+      error: error.message,
+      prices: []
+    };
+  } finally {
+    if (browser) await browser.close();
   }
 }
 
 module.exports = { scrapeFlyBondi };
-
-
-
