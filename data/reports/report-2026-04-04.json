@@ -1,0 +1,29 @@
+{
+  "timestamp": "2026-04-04T08:44:02.646Z",
+  "date": "2026-04-04",
+  "scrapers": [
+    {
+      "airline": "FlyBondi",
+      "url": "https://www.flybondi.com/es/",
+      "status": "no-prices-found",
+      "prices": [],
+      "message": "No se encontraron precios en la página"
+    },
+    {
+      "airline": "GOL",
+      "url": "https://www.voegol.com.br/",
+      "status": "no-prices-found",
+      "prices": [],
+      "message": "No se encontraron precios"
+    },
+    {
+      "airline": "Naranja X",
+      "url": "https://viajes.naranjax.com/",
+      "status": "no-prices-found",
+      "prices": [],
+      "message": "No se encontraron precios"
+    }
+  ],
+  "bestPrices": [],
+  "bestOverall": null
+}
